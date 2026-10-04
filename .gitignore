@@ -1,0 +1,4 @@
+/target
+/vendor
+*.mp4
+.mimosa/
