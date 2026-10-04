@@ -13,14 +13,40 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr as _};
 
 use crate::ff::{self, Decoder, VideoMeta};
 use crate::player::{fmt_time, Clock, State};
-use crate::render::frame_to_ansi;
+use crate::render::{ascii_frame, frame_to_ansi, ASCII_RAMP};
+
+/// 渲染模式：真彩半块（默认）或 ASCII 字符画
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Mode {
+    Color,
+    Ascii,
+}
 
 #[derive(Debug, Clone)]
 pub struct Config {
     /// 帧率上限（终端刷屏开销大，超过 20~24fps 意义不大）
     pub fps_cap: f64,
+    /// 渲染模式
+    pub mode: Mode,
+    /// ASCII 模式下反转亮度梯度（浅色主题终端用）
+    pub invert: bool,
     /// 手动指定的 ffmpeg 工具目录
     pub ffmpeg_dir: Option<std::path::PathBuf>,
+}
+
+/// 按终端尺寸与视频纵横比计算字符格数。
+/// 终端格子高≈宽的 2 倍：竖向像素 = 2 × 横向像素，两种模式通用。
+/// 半块模式每格竖向 2 像素、ASCII 每格 1 像素，格子数相同。
+pub fn compute_cells(video_w: u32, video_h: u32, cols: u16, rows: u16) -> (u32, u32) {
+    let max_x = (cols.max(20) as f64).min(400.0);
+    let max_y = (rows.saturating_sub(1) as f64).clamp(3.0, 200.0);
+    let mut cx = 2.0 * video_w as f64 * max_y / video_h as f64;
+    let mut cy = max_y;
+    if cx > max_x {
+        cx = max_x;
+        cy = (video_h as f64 * cx / (2.0 * video_w as f64)).clamp(3.0, max_y);
+    }
+    (cx.round() as u32, cy.round() as u32)
 }
 
 pub fn run(input: &Path, cfg: &Config) -> Result<()> {
@@ -65,7 +91,12 @@ fn play<W: Write>(
     }
     let fps = meta.fps.min(cfg.fps_cap).max(1.0);
     let mut clock = Clock::new(fps, 0.0);
-    let mut dec = open_decoder(bin_dir, input, 0.0, cols, rows)?;
+    let ramp = if cfg.invert {
+        ASCII_RAMP.chars().rev().collect::<String>()
+    } else {
+        ASCII_RAMP.to_string()
+    };
+    let mut dec = open_decoder(bin_dir, input, 0.0, cfg.mode, cols, rows, &meta)?;
     let mut buf: Vec<u8> = Vec::with_capacity(dec.frame_bytes);
     let mut state = State::Playing;
     let mut out = BufWriter::new(w);
@@ -87,7 +118,7 @@ fn play<W: Write>(
                     }
                     if let Some(target) = seek_requested(&k, &clock) {
                         let target = clamp_target(target, meta.duration);
-                        dec = open_decoder(bin_dir, input, target, cols, rows)?;
+                        dec = open_decoder(bin_dir, input, target, cfg.mode, cols, rows, &meta)?;
                         buf.resize(dec.frame_bytes, 0);
                         clock.seek(target);
                         state = State::Playing;
@@ -96,7 +127,7 @@ fn play<W: Write>(
                 Event::Resize(c, r) => {
                     (cols, rows) = (c, r);
                     let pos = clock.position();
-                    dec = open_decoder(bin_dir, input, pos, cols, rows)?;
+                    dec = open_decoder(bin_dir, input, pos, cfg.mode, cols, rows, &meta)?;
                     buf.resize(dec.frame_bytes, 0);
                     clock.seek(pos);
                 }
@@ -109,9 +140,12 @@ fn play<W: Write>(
             if !dec.read_frame(&mut buf)? {
                 state = State::Ended;
             } else {
-                let ansi = frame_to_ansi(&buf, dec.width as usize, dec.cell_rows as usize);
+                let rendered = match cfg.mode {
+                    Mode::Color => frame_to_ansi(&buf, dec.px_w as usize, dec.px_h as usize / 2),
+                    Mode::Ascii => ascii_frame(&buf, dec.px_w as usize, dec.px_h as usize, &ramp),
+                };
                 out.write_all(b"\x1b[1;1H")?;
-                out.write_all(ansi.as_bytes())?;
+                out.write_all(rendered.as_bytes())?;
                 clock.advance();
             }
         }
@@ -185,10 +219,22 @@ fn clamp_target(target: f64, duration: Option<f64>) -> f64 {
     t
 }
 
-fn open_decoder(bin_dir: &Path, input: &Path, seek: f64, cols: u16, rows: u16) -> Result<Decoder> {
-    let width = cols.clamp(20, 400) as u32;
-    let cell_rows = rows.saturating_sub(1).clamp(3, 200) as u32;
-    ff::spawn_decoder(bin_dir, input, seek, width, cell_rows)
+fn open_decoder(
+    bin_dir: &Path,
+    input: &Path,
+    seek: f64,
+    mode: Mode,
+    cols: u16,
+    rows: u16,
+    meta: &VideoMeta,
+) -> Result<Decoder> {
+    let (cells_x, cells_y) = compute_cells(meta.width, meta.height, cols, rows);
+    let (px_w, px_h) = match mode {
+        // 半块：每格竖向 2 像素；ASCII：每格 1 像素
+        Mode::Color => (cells_x, cells_y * 2),
+        Mode::Ascii => (cells_x, cells_y),
+    };
+    ff::spawn_decoder(bin_dir, input, seek, px_w, px_h)
 }
 
 fn display_name(input: &Path) -> String {

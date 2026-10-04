@@ -151,18 +151,19 @@ pub struct Decoder {
     stderr: ChildStderr,
     first_frame: bool,
     pub frame_bytes: usize,
-    pub width: u32,
-    pub cell_rows: u32,
+    pub px_w: u32,
+    pub px_h: u32,
 }
 
+/// 启动解码管道：输出 px_w × px_h 像素的 RGB24 裸帧。
+/// 像素尺寸由调用方按渲染模式与终端纵横比计算好传入。
 pub fn spawn_decoder(
     bin_dir: &Path,
     input: &Path,
     seek: f64,
-    width: u32,
-    cell_rows: u32,
+    px_w: u32,
+    px_h: u32,
 ) -> Result<Decoder> {
-    let px_h = cell_rows * 2;
     let mut base = Command::new("ffmpeg");
     let cmd = with_tool_path(&mut base, bin_dir)?;
     cmd.args(["-hide_banner", "-loglevel", "error", "-nostdin"]);
@@ -175,7 +176,7 @@ pub fn spawn_decoder(
         "-pix_fmt",
         "rgb24",
         "-vf",
-        &scale_arg(width, px_h),
+        &scale_arg(px_w, px_h),
         "-",
     ]);
     let mut child = cmd
@@ -190,9 +191,9 @@ pub fn spawn_decoder(
         stderr,
         child,
         first_frame: true,
-        frame_bytes: (width * px_h * 3) as usize,
-        width,
-        cell_rows,
+        frame_bytes: (px_w * px_h * 3) as usize,
+        px_w,
+        px_h,
     })
 }
 
