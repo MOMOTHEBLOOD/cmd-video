@@ -3,6 +3,19 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.3.0] - 2026-10-11
+
+### Added
+
+- **GitHub Actions CI**：与 cmd-reader / cmd-share 对齐的五道门
+  （`cargo fmt --check` → `clippy --all-targets -D warnings` → `test`
+  → `build --release` → 上传 exe artifact），windows-latest
+- README 补终端实拍截图与性能实测表（见「实测」小节）
+
+### Changed
+
+- 版本号与 cmd-reader / cmd-share 统一推进到 0.3.0（三件套同节奏发布）
+
 ## [0.2.0] - 2026-10-04
 
 ### Added

@@ -66,6 +66,20 @@ src/
   改变窗口大小即时生效
 - **不重复造轮子**：不引入 ratatui（视频是纯刷屏场景），依赖仅 crossterm + clap
 
+## 实测
+
+**环境**：Windows 11 · Windows Terminal · 单 exe 约 1.1MB · 无声音
+
+| 项 | 实测值 |
+|---|---|
+| 终端帧率 | 12~20fps（受终端刷屏吞吐限制，非解码瓶颈） |
+| 分辨率 | ≈ 终端格子数，全屏约 200×100 像素 |
+| 色彩 | 24 位真彩 ANSI（`▀` 半块，每格 2 像素） |
+| 管道延迟 | 落后墙钟自动追帧，无累积漂移 |
+| 体积 | 1.1MB（`lto=thin` + `strip=true`，零运行时依赖） |
+
+> 帧率数字是**终端渲染上限**，不是代码性能瓶颈——视频源再高帧也只显示到终端吞吐为止。
+
 ## 已知边界
 
 - 声音：终端无声道，MVP 静音（音频管道 + WASAPI 混音在 Roadmap）
@@ -78,6 +92,19 @@ src/
 - [ ] Sixel 输出模式（Windows Terminal 1.22+ 真位图，画质一档）
 - [ ] 播放列表 / 目录连播
 - [ ] 姊妹项目：cmd-reader（终端电子书阅读器，共享 crossterm 底座）
+
+## 开发
+
+```cmd
+cargo fmt --check
+cargo clippy --all-targets -- -D warnings
+cargo test
+cargo build --release
+```
+
+五道门（fmt / clippy / test / release build / artifact 上传）由
+`.github/workflows/ci.yml` 在 windows-latest 上自动执行，与
+[cmd-reader](../cmd-reader)、[cmd-share](../cmd-share) 对齐。
 
 ## License
 

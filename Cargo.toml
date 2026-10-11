@@ -1,6 +1,6 @@
 [package]
 name = "cmd-video"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 description = "在 CMD 终端里播放视频（半块真彩 ANSI + ffmpeg 管道，静音）"
 license = "MIT"
